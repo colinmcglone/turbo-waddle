@@ -84,22 +84,6 @@ If GoExcel.CellValue("D" & x) = ThisApplication.UserName Then
 			Dim lgIndex As Long = strFileNameTemp.lastIndexof("\")
 			'declare a variable and only get the path from the file name
 			Dim strPathOnly As String = strFileNameTemp.substring(0, lgIndex + 1)
-		
-		'I don't know why this dialog would only let you save to a specific folder, this is not the intended behaviour for this application so removed
-			'If the path in oFileDlg.FileName is equal to the forced path then the user saved it in the correct location. Proceed with saveas
-		'	If strPathOnly = strForcedPath Then
-				'MessageBox.Show("matches")
-				strSavePath = oFileDlg.FileName
-				oDoc.SaveAs(strSavePath,False)
-			
-			'else display the save dialog again.
-		'	Else
-		'		MessageBox.Show("Incorrect save location. Please try again.", "ID-10-T")
-		'		'MessageBox.Show("doesn't match")
-		'		On Error Resume Next
-		'		oFileDlg.ShowSave()
-		'	End If
-			
 		End If
 	Loop
 	GoExcel.Close
