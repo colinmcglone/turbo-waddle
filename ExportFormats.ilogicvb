@@ -1,0 +1,96 @@
+﻿'Define the open document
+Dim openDoc As Document
+openDoc = ThisDoc.Document
+
+'Look at all of the files referenced in the open document
+Dim docFile As Document
+For Each docFile In openDoc.AllReferencedDocuments
+	If (docFile.DocumentType = kPartDocumentObject Or docFile.DocumentType = kAssemblyDocumentObject) And docFile.DisplayName <> "Bolted Connection" Then
+		'format  file name                   
+		Dim FNamePos As Long
+		FNamePos = InStrRev(docFile.FullFileName, "\", -1)
+		Dim docFName As String 
+		docFName = Right(docFile.FullFileName, Len(docFile.FullFileName) - FNamePos)
+		Dim sPathandName As String
+		sPathandName  = docFile.FullFileName.SubString(0, docFile.FullFileName.Length - 4)
+		Try
+			docFile.DisplayName = iProperties.Value(docFName, "Project", "Part Number")
+		Catch ex As Exception
+			MsgBox(ex.Message & vbNewLine & docFile.DisplayName & vbNewLine & iProperties.Value(docFName, "Project", "Part Number"))
+		End Try
+		If Instr(docFile.DisplayName, ".") > 0 Then
+			oFileName = Left(docFile.DisplayName, Instr(docFile.DisplayName, ".") - 1)
+		Else
+			oFileName = docFile.DisplayName
+		End If
+		
+		' This looks silly, but is much faster than a loop
+		oFileName = Replace(Replace(Replace(Replace(Replace(Replace(Replace(Replace(Replace(oFileName, "|", ""), ">", ""), "<", ""), Chr(34), ""), "?", ""), "*", ""), ":", ""), "/", ""), "\", "")
+		
+		'get PDF target folder path
+		oFolder = ThisDoc.Path & "\" & "Export Files"
+		
+		'Check for the PDF folder and create it if it does not exist
+		If Not System.IO.Directory.Exists(oFolder) Then
+			System.IO.Directory.CreateDirectory(oFolder)
+		End If
+		
+		' Get the STEP translator Add-In.
+		Dim oSTEPTranslator As TranslatorAddIn
+		oSTEPTranslator = ThisApplication.ApplicationAddIns.ItemById("{90AF7F40-0C01-11D5-8E83-0010B541CD80}")
+		Dim oContext As TranslationContext
+		oContext = ThisApplication.TransientObjects.CreateTranslationContext
+		Dim oOptions As NameValueMap
+		oOptions = ThisApplication.TransientObjects.CreateNameValueMap
+		
+		If oSTEPTranslator.HasSaveCopyAsOptions(ThisApplication.ActiveDocument, oContext, oOptions) And docFile.DocumentType = kPartDocumentObject Then
+			oOptions.Value("ApplicationProtocolType") = 3
+			oContext.Type = IOMechanismEnum.kFileBrowseIOMechanism
+			Dim oData As DataMedium
+			oData = ThisApplication.TransientObjects.CreateDataMedium
+			oData.FileName = oFolder & "\" & oFileName & ".stp"
+			oSTEPTranslator.SaveCopyAs(docFile, oContext, oOptions, oData)
+		End If
+		
+		'Look for drawing with the same name as the part
+		dPathandName = sPathandName & ".idw"
+		If System.IO.File.Exists(dPathandName) Then
+			Dim oDrawDoc As DrawingDocument
+			oDrawDoc = ThisApplication.Documents.Open(dPathandName, True)
+			oPDFAddIn = ThisApplication.ApplicationAddIns.ItemById("{0AC6FD96-2F4D-42CE-8BE0-8AEA580399E4}")
+			oContext = ThisApplication.TransientObjects.CreateTranslationContext
+			oContext.Type = IOMechanismEnum.kFileBrowseIOMechanism
+			oOptions = ThisApplication.TransientObjects.CreateNameValueMap
+			oDataMedium1 = ThisApplication.TransientObjects.CreateDataMedium
+			
+			If oPDFAddIn.HasSaveCopyAsOptions(oDataMedium1, oContext, oOptions) Then
+			oOptions.Value("All_Color_AS_Black") = 1
+			oOptions.Value("Remove_Line_Weights") = 1
+			oOptions.Value("Vector_Resolution") = 400
+			oOptions.Value("Sheet_Range") = Inventor.PrintRangeEnum.kPrintAllSheets
+			End If
+			
+			'Set the PDF target file name
+			oDataMedium1.FileName = oFolder & "\" & oFileName & ".pdf"
+			
+			'Publish document
+			oPDFAddIn.SaveCopyAs(oDrawDoc, oContext, oOptions, oDataMedium1)
+			
+			' Get the DXF translator Add-In.
+			Dim DXFAddIn As TranslatorAddIn
+			DXFAddIn = ThisApplication.ApplicationAddIns.ItemById("{C24E3AC4-122E-11D5-8E91-0010B541CD80}")
+			Dim strIniFile As String
+			strIniFile = "Z:\Eng\Common Inventor Content Library\ILOGIC\dxfexp.ini"
+			oOptions.Value("Export_Acad_IniFile") = strIniFile
+			
+			oDataMedium2 = ThisApplication.TransientObjects.CreateDataMedium
+			
+			oDataMedium2.FileName = oFolder & "\" & oFileName & ".dxf"
+			If docFile.DocumentType = kPartDocumentObject Then
+				Call DXFAddIn.SaveCopyAs(oDrawDoc, oContext, oOptions, oDataMedium2)
+			End If
+			oDrawDoc.Close
+		End If
+	End If
+Next
+MsgBox("Export completed.")

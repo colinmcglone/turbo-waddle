@@ -1,0 +1,171 @@
+﻿' This script exports the Structured BOM of the open assembly to Excel, then formats the sheet and uses the Item decimal notation to create a hierarchical list on a web page to view the assembly and subassembly structure with links to drawings as pdfs. The pdfs can be automatically created from existing drawings with the ExportPDF script.
+
+Dim oDoc As AssemblyDocument
+oDoc = ThisApplication.ActiveDocument
+'Get file location
+oPath = ThisDoc.Path
+Dim FNamePos As Long
+FNamePos = InStrRev(oDoc.FullFileName, "\", -1)                        
+Dim docFName As String 
+docFName = Right(oDoc.FullFileName, Len(oDoc.FullFileName) - FNamePos)
+Dim sPathandName As String
+sPathandName  = oDoc.FullFileName.SubString(0, oDoc.FullFileName.Length-4)
+' Set filename variable to the displayname property of the file. The displayname should be set as the Part Number from the ROUTING script, and this is just an easier and more consist ant way of accessing Part Number and ensuring it is the same as the name given to the pdf
+If Instr(oDoc.DisplayName, ".") > 0 Then
+	oFileName = Left(oDoc.DisplayName, Instr(oDoc.DisplayName, ".") - 1)
+Else
+	oFileName = oDoc.DisplayName
+End If
+' Set a reference to the BOM
+Dim oBOM As BOM
+oBOM = oDoc.ComponentDefinition.BOM
+' Set the structured view to 'all levels'
+oBOM.StructuredViewFirstLevelOnly = False
+' Make sure that the structured view is enabled.
+oBOM.StructuredViewEnabled = True
+' Set a reference to the "Structured" BOMView
+Dim oStructuredBOMView As BOMView
+oStructuredBOMView = oBOM.BOMViews.Item("Structured")
+'Export the BOM view to an Excel file
+oStructuredBOMView.Export(oPath & "\" & oFileName & "BOM.xlsx", kMicrosoftExcelFormat)
+SetAttr(oPath & "\" & oFileName & "BOM.xlsx", GetAttr(oPath & "\" & oFileName & "BOM.xlsx") And (Not vbReadOnly))
+
+' Load Excel
+excelApp = CreateObject("Excel.Application")
+excelApp.Visible = False
+excelApp.DisplayAlerts = False
+excelWorkbook = excelApp.Workbooks.Open(oPath & "\" & oFileName & "BOM.xlsx")
+
+' move everything over to make room to copy the columns we want
+excelApp.Range("A:C").EntireColumn.Insert
+
+' the columns we want will be in different places in different projects, so find them and put them in the first 3 columns
+iRow = 1000
+For iCol = 1 to 100
+	TargetCol = 0
+	If excelApp.Cells(1, iCol).Value2 = "Item" Then TargetCol = 1
+	If excelApp.Cells(1, iCol).Value2 = "Part Number" Then TargetCol = 2
+	If excelApp.Cells(1, iCol).Value2 = "Description" Then TargetCol = 3
+
+	If TargetCol <> 0 Then
+		excelApp.Range(excelApp.Cells(1, iCol), excelApp.Cells(iRow, iCol)).Copy(destination:=excelApp.Cells(1, TargetCol))
+	End If
+Next iCol
+
+' Write html. The javascript is to create the collapsing list, the css is in the header. Everything should work for everyone on the internal network with a Z drive set up.
+' Yes this is ugly
+Dim file As System.IO.StreamWriter
+file = My.Computer.Filesystem.OpenTextFileWriter(oPath & "\" & oFileName & "BOM.html", True)
+file.WriteLine("<!DCOTYPE html>" _
+&"<head>" _
+&"<script type='text/javascript' src='file:///Z:\Eng\Common%20Inventor%20Content%20Library\ILOGIC\bom%20web\CollapsibleLists.js'></script>" _
+&"<script type='text/javascript'>window.onload = function(){CollapsibleLists.apply();}</script>" _
+&"<script type='text/javascript'>" _
+&"function expand () {" _
+&"	var lis = document.getElementsByTagName('li');" _
+&"	var uls = document.getElementsByTagName('ul');" _
+&"	for (var index = 0; index < uls.length; index++) {" _
+&"		uls[index].style.display = 'block';" _
+&"		uls[index].className = 'collapsibleList';" _
+&"	};" _
+&"	for (var index = 0; index < lis.length; index++) {" _
+&"		lis[index].style.display = 'block';" _
+&"		lis[index].className = 'collapsibleListOpen';" _
+&"	};" _
+&"	document.getElementById('top').className = 'collapsibleList';" _
+&"};" _
+&"</script>" _
+&"<script>" _
+&"$(document).ready(function(){" _
+&"    $('#top').columnize();" _
+&"});" _
+&"</script>" _
+&"<style>" _
+&".collapsibleList li{list-style-image:url('file:///Z:\Eng\Common%20Inventor%20Content%20Library\ILOGIC\bom%20web\button.png');cursor:auto;}" _
+&"li.collapsibleListOpen{list-style-image:url('file:///Z:\Eng\Common%20Inventor%20Content%20Library\ILOGIC\bom%20web\button-open.png');cursor:pointer;}" _
+&"li.collapsibleListClosed{list-style-image:url('file:///Z:\Eng\Common%20Inventor%20Content%20Library\ILOGIC\bom%20web\button-closed.png');cursor:pointer;} " _
+&"@media print {.collapsibleList li{list-style-image:none;cursor:auto;}}" _
+&"@media print {li.collapsibleListOpen{list-style-image:none;cursor:pointer;}}" _
+&"@media print {li.collapsibleListClosed{list-style-image:none;cursor:pointer;}} " _
+&"@media print {.no-print, .no-print * {display:none !important;}}" _
+&"ul.collapsibleList, ul.collapsibleList ul, ul.collapsibleList li {" _
+&"  margin: 0;" _
+&"  padding: 0;" _
+&"  list-style-type: none;" _
+&"}" _
+&"ul.collapsibleList ul { padding-left: 0.3em; }" _
+&"ul.collapsibleList li {" _
+&"  border-left: 1px dotted #000;" _
+&"  padding-left: 13px;" _
+&"  background: url(dotted.gif) scroll no-repeat 1px 0.8em;" _
+&"}" _
+&"ul.collapsibleList li.last {" _
+&"  border-left-width: 0px;" _
+&"  padding-left: 14px;" _
+&"  background: url(dottedangle.gif) scroll no-repeat left top;" _
+&"}" _
+&"body {padding:10px;}" _
+&"</style></head><body><h2>" & oFileName & "</h2><br><button class='no-print' onclick='expand()'>Expand</button><button class='no-print' onclick='location.reload()'>Collapse</button><br>" _
+&"<ul class='collapsibleList' id='top'>")
+
+lastcount = 0
+' Assuming less than 1000 parts, this must be limited because a for each loop will go through all 1 million rows
+For i = 2 To 1000
+	x = 0
+	a = excelApp.Cells(i, 2).Value2 'part number
+	b = Left(a, 1) 'get first character of part number, all of our parts start with v
+	' Delete rows do not contain a Liftsafe part number
+	If b <> "V" And b <> "" Then
+		excelApp.Cells(i, 1).EntireRow.Delete
+		x = 1
+	End If
+	' Skip rows that were deleted
+	If x <> 1 And a <> "" Then
+		c = excelApp.Cells(i,1).Value2
+		' Some parts were created in a non-standard way and had dumb names, the left can be removed or ignored when parts are properly named
+		n = Left(excelApp.Cells(i,2).Value2, 6)
+		m = excelApp.Cells(i,3).Value2
+		' Check to see if part has pdf and only link it if it does
+		If My.Computer.FileSystem.FileExists(oPath & "/Export Files/" & n & ".pdf") Then
+			j = "<a target='_blank' href='./Export%20Files/" & n & ".pdf'>" & n & " - " & m & "</a>"
+		Else
+			j = n & " - " & m
+		End If
+		Dim d As Integer, count As Integer
+		count = 0
+		' Count decimals in item to determine hierarchy
+		For d = 1 To Len(c)
+			If Mid(c, d, 1) = "." Then count = count + 1
+		Next
+		' create new list if the part is deeper than last
+		If count > lastcount Then
+			file.WriteLine("<ul><li>" & j & "</li>")
+		End If
+		' just create new item if part is same level as last
+		If count = lastcount Then
+			file.WriteLine("<li>" & j & "</li>")
+		End If
+		' end previous list if part is higher than last
+		If count < lastcount Then
+			y = lastcount - count
+			While y > 1
+				file.WriteLine("</ul>")
+				y = y - 1
+			End While
+			file.WriteLine("</ul><li>" & j & "</li>")
+		End If
+		lastcount = count
+	End If
+	If x = 1 Then
+		i = i - 1
+	End If
+Next i
+
+MsgBox("HTML BOM Website created at " & oPath & "\" & oFileName & "BOM.html")
+
+file.Close
+
+excelWorkbook.Save
+excelWorkbook.Close
+excelApp.Quit
+excelApp = Nothing

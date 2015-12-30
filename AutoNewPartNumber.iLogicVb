@@ -1,0 +1,109 @@
+﻿GoExcel.Open("Z:\Eng\Common Inventor Content Library\ILOGIC\numbers.xlsx", "Sheet1")
+Dim n As Integer = 1
+
+'Get unused part number, 100000 max for name space so stay within that.
+While n < 100000
+	'Look for first empty cell in A
+	If GoExcel.CellValue("A" & n) = "" Then
+		'Convert to part number format string
+		PartN = "V" & n.ToString("00000")
+		'Add part number to empty cell
+		GoExcel.CellValue("A" & n) = PartN
+		'Add which user got the part number
+		GoExcel.CellValue("D" & n) = ThisApplication.UserName
+		GoExcel.Save
+		x = n
+		n = 100001
+	Else
+		n = n + 1
+	End If
+End While
+
+'Check that your grab saved properly, protects against multiple people getting the same part number because of simultaneous requests
+If GoExcel.CellValue("D" & x) = ThisApplication.UserName Then
+	'Save the number to iProperties
+	iProperties.Value("Project", "Part Number") = PartN
+	
+	'Code copied from The Internet, save as dialog box
+
+	'define the active document
+	oDoc = ThisDoc.Document
+	'create a file dialog box
+	Dim oFileDlg As inventor.FileDialog = Nothing
+	InventorVb.Application.CreateFileDialog(oFileDlg)
+
+	'check file type and set dialog filter
+	If oDoc.DocumentType = kPartDocumentObject Then
+		oFileDlg.Filter = "Autodesk Inventor Part Files (*.ipt)|*.ipt"
+	Else If oDoc.DocumentType = kAssemblyDocumentObject Then
+		oFileDlg.Filter = "Autodesk Inventor Assembly Files (*.iam)|*.iam"
+	Else If oDoc.DocumentType = kDrawingDocumentObject Then
+		oFileDlg.Filter = "Autodesk Inventor Drawing Files (*.idw)|*.idw"
+	End If
+
+	'this variable is used to check if the path should be forced or nor
+	Dim blnPropertyChecker As Boolean = True
+	'this variable sets the forced path
+	Dim strForcedPath As String = ThisDoc.WorkspacePath() & "\"
+	'this variable will be the saved path
+	Dim strSavePath As String = ""
+
+	'if the path is forced then set the initial directory to the forced path otherwise use the workspace path
+	If blnPropertyChecker = True Then
+		oFileDlg.InitialDirectory = strForcedPath
+	Else
+		'set the directory to open the dialog at
+		oFileDlg.InitialDirectory = ThisDoc.WorkspacePath()
+	End If
+
+	'set the file name string to use in the input box
+	oFileDlg.FileName = iProperties.Value("Project", "Part Number")
+
+	'work with an error created by the user backing out of the save
+	oFileDlg.CancelError = True
+	On Error Resume Next
+	'specify the file dialog as a save dialog (rather than a open dialog)
+	oFileDlg.ShowSave()
+
+	'do until the strSavePath variable is set to something.
+	Do Until strSavePath <> ""
+		'catch an empty string in the input
+		If Err.Number <> 0 Then
+			MessageBox.Show("No File Saved.", "iLogic: Dialog Canceled")
+			'this is need to get out of the do loop if there's an empty string or if it was canceled.
+			strSavePath = "xxxx"
+		'if a file name was defined and the path is NOT forced then use what was entered
+		ElseIf oFileDlg.FileName <> "" And blnPropertyChecker = False Then
+			strSavePath = oFileDlg.FileName
+			oDoc.SaveAs(strSavePath,False)
+		'if the file name was defined and the path IS forced then.....
+		ElseIf oFileDlg.File <> "" And blnPropertyChecker = True Then
+			'declare a temporary variable and have it be the filename that was entered in the dialog. oFileDlg.FileName contains the file name and full path.
+			Dim strFileNameTemp As String = oFileDlg.FileName
+			'declare a variable to find the last "\"
+			Dim lgIndex As Long = strFileNameTemp.lastIndexof("\")
+			'declare a variable and only get the path from the file name
+			Dim strPathOnly As String = strFileNameTemp.substring(0, lgIndex + 1)
+		
+		'I don't know why this dialog would only let you save to a specific folder, this is not the intended behaviour for this application so removed
+			'If the path in oFileDlg.FileName is equal to the forced path then the user saved it in the correct location. Proceed with saveas
+		'	If strPathOnly = strForcedPath Then
+				'MessageBox.Show("matches")
+				strSavePath = oFileDlg.FileName
+				oDoc.SaveAs(strSavePath,False)
+			
+			'else display the save dialog again.
+		'	Else
+		'		MessageBox.Show("Incorrect save location. Please try again.", "ID-10-T")
+		'		'MessageBox.Show("doesn't match")
+		'		On Error Resume Next
+		'		oFileDlg.ShowSave()
+		'	End If
+			
+		End If
+	Loop
+	GoExcel.Close
+Else
+	'If someone else saved over top of your number or there was a problem with saving the allocation
+	MessageBox.Show("Part Number did not save properly to excel sheet, operation aborted. Please check network connection and file permissions.", "Failure", MessageBoxButtons.OK)
+End If
